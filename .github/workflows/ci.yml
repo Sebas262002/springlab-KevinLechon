@@ -7,41 +7,23 @@ on:
   pull_request:
     branches:
       - main
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      # 1️⃣ Descargar el repositorio
-      - name: Checkout repository
+      - name: Checkout repository  # <--- Faltaba el espacio aquí
         uses: actions/checkout@v4
 
-      # 2️⃣ Instalar JDK 17
-      - name: Setup JDK 17
+      - name: Setup JDK 17  # <--- Faltaba el espacio aquí
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'   # Distribución recomendada de OpenJDK
+          distribution: 'temurin'
           java-version: '17'
-
-
-      - name: Grant execute permission for Gradle
-        run: chmod +x gradlew
-      # 3️⃣ Dar permisos de ejecución al wrapper de Gradle
-      - name: Grant execute permission for Gradle
+      - name: Grant execute permission for Granle
         run: chmod +x gradlew
 
-      # 4️⃣ Compilar el proyecto con Gradle
-      - name: Build with Gradle
+      - name: Build with Gradle  # <--- Faltaba el espacio aquí
         run: ./gradlew clean build
 
-      # 5️⃣ Ejecutar las pruebas unitarias
-      - name: Run Tests
+      - name: Run Test  # <--- Faltaba el espacio aquí
         run: ./gradlew test
-
-      # 6️⃣ Subir el artefacto generado (por ejemplo, .jar)
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-jar
-          path: build/libs/*.jar
