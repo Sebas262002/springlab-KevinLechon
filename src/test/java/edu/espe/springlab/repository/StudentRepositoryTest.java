@@ -1,7 +1,5 @@
 package edu.espe.springlab.repository;
 
-
-
 import edu.espe.springlab.domain.Student;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
