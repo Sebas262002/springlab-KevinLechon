@@ -1,9 +1,10 @@
 spring:
   #Configuracion del datasource
   datasource:
-    url: jdbc:h2:men:renderdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    url: jdbc:h2:mem:renderdb;DB_CLOSE_DELAY=-1;MODE=MySQL
     username: sa
     password:
+    driver-class-name: org.h2.Driver
 
   #Configuracion de JPA/Hibernate
   jpa:
@@ -13,11 +14,21 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
 
+  #Configuracion de Jackson
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
 
-sql:
-  init:
-    mode never
+  #Habilitar consola H2 para debugging
+  h2:
+    console:
+      enabled: true
+
+  sql:
+    init:
+      mode: never
 
 #Configurar el servidor embebido (Tomcat)
 server:
