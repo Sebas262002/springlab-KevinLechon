@@ -16,12 +16,14 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     // 404 del negocio
+    //Kevin Lechon
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<?> handleNotFound(NotFoundException ex){
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
     //409 cuando existe correos duplicados
+    //Kevin Lechon
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<?> handleConflict(ConflictException ex){
         return error(HttpStatus.CONFLICT, ex.getMessage());

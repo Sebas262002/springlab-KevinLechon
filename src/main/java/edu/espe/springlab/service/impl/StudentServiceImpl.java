@@ -3,6 +3,7 @@ package edu.espe.springlab.service.impl;
 import edu.espe.springlab.domain.Student;
 import edu.espe.springlab.dto.StudentRequestData;
 import edu.espe.springlab.dto.StudentResponse;
+import edu.espe.springlab.dto.StudentStatsResponse;
 import edu.espe.springlab.repository.StudentRepository;
 import edu.espe.springlab.service.StudentService;
 import edu.espe.springlab.web.advice.ConflictException;
@@ -48,6 +49,22 @@ public class StudentServiceImpl implements StudentService {
         Student student = repo.findById(id).orElseThrow(() -> new NotFoundException("Estudiante no encontrado"));
         student.setActive(false);
         return toResponse(repo.save(student));
+    }
+
+    @Override
+    public List<StudentResponse> findByPartialName(String partialName) {
+        return repo.findByFullNameContainingIgnoreCase(partialName)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Override
+    public StudentStatsResponse getStats() {
+        long total = repo.count();
+        long activos = repo.countByActiveTrue();
+        long inactivos = repo.countByActiveFalse();
+        return new StudentStatsResponse(total, activos, inactivos);
     }
 
     private StudentResponse toResponse(Student student){
