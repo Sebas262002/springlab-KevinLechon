@@ -31,4 +31,4 @@ server:
 
 #Configuración de la aplicación
 app:
-  version: "1.0.0-dev"  # Se actualiza automáticamente en cada despliegue
+  version: "${APP_VERSION:1.0.0-dev}"  # Se actualiza automáticamente en cada despliegue

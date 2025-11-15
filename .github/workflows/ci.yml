@@ -25,6 +25,30 @@ jobs:
       - name: Grant execute permission for Gradle
         run: chmod +x gradlew
 
+      - name: Update version in application.yml
+        run: |
+          echo "=== ACTUALIZANDO VERSION ==="
+          echo "Build number: ${{ github.run_number }}"
+          echo "Commit SHA: ${{ github.sha }}"
+          
+          # Crear la versión usando build number y commit hash corto
+          VERSION="${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)"
+          echo "Nueva versión: $VERSION"
+          
+          # Actualizar application.yml
+          if grep -q "app:" src/main/resources/application.yml; then
+            # Si ya existe la sección app, actualizar version
+            sed -i "/^app:/,/^[[:alpha:]]/ s/version:.*/version: \"$VERSION\"/" src/main/resources/application.yml
+          else
+            # Si no existe, agregar la sección completa
+            echo "" >> src/main/resources/application.yml
+            echo "app:" >> src/main/resources/application.yml
+            echo "  version: \"$VERSION\"" >> src/main/resources/application.yml
+          fi
+          
+          echo "Contenido actualizado de application.yml:"
+          cat src/main/resources/application.yml
+          
       - name: Build with Gradle (skip tests)
         run: ./gradlew clean build -x test
 
