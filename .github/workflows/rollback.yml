@@ -1,0 +1,105 @@
+name: Render - Auto Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      service_id:
+        description: '(opcional) ID del servicio en Render (si se quiere sobreescribir el secret)'
+        required: false
+      reason:
+        description: 'Motivo del rollback'
+        required: false
+        default: 'Manual rollback'
+  repository_dispatch:
+    types: [render_deploy_failed]
+  workflow_call:
+    inputs:
+      service_id:
+        required: false
+        type: string
+      reason:
+        required: false
+        type: string
+        default: 'Automatic rollback after failed deployment'
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+    steps:
+      - name: Preparación - validar secretos/entradas
+        run: |
+          echo "=== INICIANDO ROLLBACK ==="
+          echo "Motivo: ${{ github.event.inputs.reason || inputs.reason || 'Rollback automático tras fallo de despliegue' }}"
+          echo "Trigger: ${{ github.event_name }}"
+          
+          # permitir override del service id via inputs
+          if [ -n "${{ github.event.inputs.service_id || inputs.service_id || '' }}" ]; then
+            echo "USING_SERVICE_ID=${{ github.event.inputs.service_id || inputs.service_id }}" >> $GITHUB_ENV
+          fi
+          
+          if [ -z "$RENDER_API_KEY" ]; then
+            echo "ERROR: Se requiere el secret RENDER_API_KEY"; exit 1
+          fi
+          if [ -z "${USING_SERVICE_ID:-}" ] && [ -z "$RENDER_SERVICE_ID" ]; then
+            echo "ERROR: Se requiere RENDER_SERVICE_ID (o pasar service_id en inputs)"; exit 1
+          fi
+          
+          SERVICE_ID="${USING_SERVICE_ID:-$RENDER_SERVICE_ID}"
+          echo "SERVICE_ID=$SERVICE_ID" >> $GITHUB_ENV
+          echo "Servicio objetivo: $SERVICE_ID"
+
+      - name: Listar últimos deploys desde Render
+        run: |
+          SERVICE_ID="$SERVICE_ID"
+          echo "Consultando deploys para $SERVICE_ID"
+          curl -sS -H "Authorization: Bearer $RENDER_API_KEY" \
+            "https://api.render.com/v1/services/$SERVICE_ID/deploys?limit=20" > deploys.json
+          jq -r '.[0] // "[]" ' deploys.json >/dev/null
+
+      - name: Encontrar el último deploy exitoso (commit)
+        id: find
+        run: |
+          sha=$(jq -r '.[] | select(.status=="succeeded") | .commit | select(.!=null)' deploys.json | head -n1)
+          if [ -z "$sha" ]; then
+            echo "No se encontró ningún deploy exitoso previo"; exit 1
+          fi
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - name: Trigger rollback creando un nuevo deploy al commit previo
+        id: trigger
+        run: |
+          SERVICE_ID="$SERVICE_ID"
+          COMMIT="${{ steps.find.outputs.sha }}"
+          echo "Creando deploy para commit $COMMIT en service $SERVICE_ID"
+          resp=$(curl -sS -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"commit\":\"$COMMIT\"}" \
+            "https://api.render.com/v1/services/$SERVICE_ID/deploys")
+          echo "$resp" > trigger.json
+          echo "response=$(jq -r '.id // .message // empty' trigger.json)" >> $GITHUB_OUTPUT
+          jq -C . trigger.json
+
+      - name: Resultado
+        run: |
+          echo "=== RESULTADO DEL ROLLBACK ==="
+          echo "Rollback solicitado para commit: ${{ steps.find.outputs.sha }}"
+          echo "Motivo: ${{ github.event.inputs.reason || inputs.reason || 'Rollback automático tras fallo de despliegue' }}"
+          echo ""
+          echo "Respuesta de Render API:"
+          cat trigger.json
+          echo ""
+          echo "Para verificar el estado del rollback:"
+          echo "- Dashboard: https://dashboard.render.com/web/$SERVICE_ID"
+          echo "- API Status: curl -H \"Authorization: Bearer \$RENDER_API_KEY\" https://api.render.com/v1/services/$SERVICE_ID/deploys"
+          
+          # Verificar si el rollback fue exitoso
+          if [ "${{ steps.trigger.outputs.response }}" != "" ]; then
+            echo "✅ Rollback iniciado correctamente"
+          else
+            echo "❌ Error al iniciar rollback"
+            exit 1
+          fi
