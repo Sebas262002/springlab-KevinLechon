@@ -1,5 +1,6 @@
 name: CI - Build and Test
 #KEVIN SEBASTIAN LECHON CHURUCHUMBI
+
 on:
   push:
     branches:
@@ -25,6 +26,11 @@ jobs:
       - name: Grant execute permission for Gradle
         run: chmod +x gradlew
 
+
+      - name: Forzar error (para pruebas)
+        run: exit 1
+      # Quita esta parte para que CI funcione normalmente
+
       - name: Update version in application.yml
         run: |
           echo "=== ACTUALIZANDO VERSION ==="
@@ -48,7 +54,7 @@ jobs:
           
           echo "Contenido actualizado de application.yml:"
           cat src/main/resources/application.yml
-          
+
       - name: Build with Gradle (skip tests)
         run: ./gradlew clean build -x test
 
