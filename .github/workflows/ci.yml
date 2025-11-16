@@ -1,52 +1,17 @@
-name: CD - Deploy to Render with Auto Rollback
-
+name: CI - Build and Test
+#KEVIN SEBASTIAN LECHON CHURUCHUMBI
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
-    inputs:
-      force_deploy:
-        description: 'Forzar despliegue (incluso si no hay cambios)'
-        required: false
-        type: boolean
-        default: false
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Grant execute permission for Gradle
-        run: chmod +x gradlew
-
-      - name: Run tests
-        run: ./gradlew test
-
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: build/reports/tests/test/
-
-  build-and-deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    outputs:
-      deploy_success: ${{ steps.deploy.outputs.success }}
-      deploy_id: ${{ steps.deploy.outputs.deploy_id }}
-    env:
-      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-      RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -83,131 +48,8 @@ jobs:
           
           echo "Contenido actualizado de application.yml:"
           cat src/main/resources/application.yml
-          
-          # Guardar la versión para otros jobs
-          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: Build application
-        run: |
-          echo "=== COMPILANDO APLICACION ==="
-          ./gradlew clean build -x test
-          echo "✅ Compilación exitosa"
+      - name: Build with Gradle (skip tests)
+        run: ./gradlew clean build -x test
 
-      - name: Deploy to Render
-        id: deploy
-        run: |
-          echo "=== DESPLEGANDO A RENDER ==="
-          echo "Commit: ${{ github.sha }}"
-          echo "Versión: $APP_VERSION"
-          
-          # Crear el despliegue en Render
-          DEPLOY_RESPONSE=$(curl -sS -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer $RENDER_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"commit\":\"${{ github.sha }}\"}" \
-            "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
-            -o deploy_response.json)
-          
-          HTTP_CODE="${DEPLOY_RESPONSE: -3}"
-          
-          echo "HTTP Status: $HTTP_CODE"
-          echo "Respuesta de Render:"
-          cat deploy_response.json
-          
-          if [ "$HTTP_CODE" -eq 201 ] || [ "$HTTP_CODE" -eq 200 ]; then
-            DEPLOY_ID=$(jq -r '.id // empty' deploy_response.json)
-            echo "✅ Despliegue iniciado correctamente"
-            echo "Deploy ID: $DEPLOY_ID"
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "deploy_id=$DEPLOY_ID" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Error al iniciar despliegue"
-            echo "success=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-      - name: Wait for deployment completion
-        if: steps.deploy.outputs.success == 'true'
-        id: wait_deploy
-        run: |
-          echo "=== ESPERANDO COMPLETION DEL DESPLIEGUE ==="
-          DEPLOY_ID="${{ steps.deploy.outputs.deploy_id }}"
-          MAX_WAIT=600  # 10 minutos máximo
-          WAIT_TIME=0
-          
-          while [ $WAIT_TIME -lt $MAX_WAIT ]; do
-            DEPLOY_STATUS=$(curl -sS \
-              -H "Authorization: Bearer $RENDER_API_KEY" \
-              "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys/$DEPLOY_ID" | \
-              jq -r '.status // "unknown"')
-          
-            echo "Estado actual: $DEPLOY_STATUS (esperado: $WAIT_TIME s)"
-          
-            if [ "$DEPLOY_STATUS" = "succeeded" ]; then
-              echo "✅ Despliegue completado exitosamente"
-              echo "deploy_final_status=succeeded" >> $GITHUB_OUTPUT
-              break
-            elif [ "$DEPLOY_STATUS" = "failed" ] || [ "$DEPLOY_STATUS" = "canceled" ]; then
-              echo "❌ Despliegue falló con estado: $DEPLOY_STATUS"
-              echo "deploy_final_status=failed" >> $GITHUB_OUTPUT
-              exit 1
-            elif [ "$DEPLOY_STATUS" = "unknown" ]; then
-              echo "⚠️  Estado desconocido, reintentando..."
-            fi
-          
-            sleep 30
-            WAIT_TIME=$((WAIT_TIME + 30))
-          done
-          
-          if [ $WAIT_TIME -ge $MAX_WAIT ]; then
-            echo "❌ Timeout esperando el despliegue"
-            echo "deploy_final_status=timeout" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-      - name: Verify deployment
-        if: steps.wait_deploy.outputs.deploy_final_status == 'succeeded'
-        run: |
-          echo "=== VERIFICANDO DESPLIEGUE ==="
-          # Aquí puedes agregar verificaciones adicionales como health checks
-          echo "✅ Despliegue verificado exitosamente"
-          echo "🎉 Aplicación desplegada con versión: $APP_VERSION"
-          echo "Dashboard: https://dashboard.render.com/web/$RENDER_SERVICE_ID"
-
-  rollback:
-    needs: build-and-deploy
-    if: failure() && needs.build-and-deploy.outputs.deploy_success == 'true'
-    uses: ./.github/workflows/rollback.yml
-    with:
-      reason: 'Rollback automático tras fallo en despliegue de CD'
-    secrets: inherit
-
-  notify:
-    needs: [build-and-deploy, rollback]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify deployment result
-        run: |
-          echo "=== RESUMEN DEL DESPLIEGUE ==="
-          
-          if [ "${{ needs.build-and-deploy.result }}" = "success" ]; then
-            echo "✅ DESPLIEGUE EXITOSO"
-            echo "Versión desplegada: ${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)"
-          else
-            echo "❌ DESPLIEGUE FALLIDO"
-          
-            if [ "${{ needs.rollback.result }}" = "success" ]; then
-              echo "✅ Rollback ejecutado exitosamente"
-            elif [ "${{ needs.rollback.result }}" = "failure" ]; then
-              echo "❌ Rollback también falló"
-            elif [ "${{ needs.rollback.result }}" = "skipped" ]; then
-              echo "⚠️  Rollback no fue necesario"
-            fi
-          fi
-          
-          echo ""
-          echo "Detalles:"
-          echo "- Commit: ${{ github.sha }}"
-          echo "- Build: ${{ github.run_number }}"
-          echo "- Workflow: ${{ github.run_id }}"
+#KEVIN SEBASTIAN LECHON CHURUCHUMBI
